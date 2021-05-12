@@ -21,6 +21,7 @@ I am using the R library quanteda for exploring the text files.
 ```{r loading_libraries, echo=FALSE}
 library("quanteda")
 library("quanteda.textplots")
+library("quanteda.textstats")
 require(readtext)
 library(ggplot2)
 ```
@@ -52,7 +53,7 @@ gc()
 
 ### Word counts and line counts
 
-```{r counts, fig.align = 'center'}
+```{r counts,cache=TRUE,  fig.align = 'center'}
 # count sentences for each text corpus
 count_sentences = sapply(toks,ndoc)
 
@@ -82,7 +83,7 @@ for (c in names(df_dist_words)) {
 - As expected the twitter distribution is quite different as the number of words in tweets are very restricted: The highest bin has up to 20 words per sentence.
 
 ### Word cloud, most frequent words
-```{r word_frequencies, fig.align = 'center'}
+```{r word_frequencies, cache=TRUE, fig.align = 'center'}
 # creating tokens and removing punctuation
 toks = lapply(docs,tokens,remove_punct =T)
 # create 
@@ -108,6 +109,29 @@ If we compare the occurrences of the words we see that:
 - In the blogs source we have casual language. However, rather non-emotional: E.g. one, can, know, time.
 - In the news source we have as top word "said" to quote some person. Additionally, the word "$" relating to amounts of money (e.g. spending of government). Thus, we see words that represent formal language.
 - In twitter, we see words that reflect informal and casual speech. However, the words are a little more "affective"/emotional and related to the current situation: e.g. just, good, like, love, thanks.
+
+## n-grams
+```{r n_grams, fig.align = 'center', fig.width=10}
+# create two grams
+two_grams = lapply(toks,tokens_ngrams)
+# create two gram dfm 
+dfm_two_grams = lapply(two_grams, dfm)
+# calculate frequencies for two grams
+features_two_grams = lapply(dfm_two_grams,textstat_frequency,n =100)
+i=0
+for (ftg in features_two_grams) {
+  i=i+1
+  print(i)
+  # Sort by reverse frequency order: tbd
+  ftg$feature <- with(ftg, reorder(feature, -frequency))
+  p = ggplot(ftg, aes(x = feature, y = frequency)) +
+    geom_point() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(paste0(fnames[i],": Frequency of 2 grams"))
+  print(p)
+}
+
+``` 
 
 ## Approach for language model
 
