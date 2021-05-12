@@ -86,6 +86,7 @@ for (c in names(df_dist_words)) {
 ```{r word_frequencies, cache=TRUE, fig.align = 'center'}
 # creating tokens and removing punctuation
 toks = lapply(docs,tokens,remove_punct =T)
+#toks = lapply(toks, tokens_select, pattern=stopwords("en"), selection="remove", padding=FALSE)
 # create 
 dfmats = lapply(toks,dfm)
 dfmats = lapply(dfmats,dfm_remove,pattern=stopwords("en"))
@@ -113,13 +114,14 @@ If we compare the occurrences of the words we see that:
 ## n-grams
 ```{r n_grams, fig.align = 'center', fig.width=10}
 # create two grams
+
 two_grams = lapply(toks,tokens_ngrams)
 # create two gram dfm 
 dfm_two_grams = lapply(two_grams, dfm)
 # calculate frequencies for two grams
-features_two_grams = lapply(dfm_two_grams,textstat_frequency,n =100)
+freq_two_grams = lapply(dfm_two_grams,textstat_frequency,n =100)
 i=0
-for (ftg in features_two_grams) {
+for (ftg in freq_two_grams) {
   i=i+1
   print(i)
   # Sort by reverse frequency order: tbd
@@ -132,6 +134,17 @@ for (ftg in features_two_grams) {
 }
 
 ``` 
+
+```{r}
+freq_two_grams = lapply(dfm_two_grams,textstat_frequency,n =1000)
+cumsum_freq_two_grams= cumsum(features_two_grams[[1]]$frequency)/sum(features_two_grams[[1]]$frequency)
+p = ggplot(ftg, aes(x = feature, y = frequency)) +
+    geom_point() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(paste0(fnames[i],": Frequency of 2 grams"))
+print(p)
+```
+
 
 ## Approach for language model
 
