@@ -114,7 +114,6 @@ If we compare the occurrences of the words we see that:
 ## n-grams
 ```{r n_grams, fig.align = 'center', fig.width=10}
 # create two grams
-
 two_grams = lapply(toks,tokens_ngrams)
 # create two gram dfm 
 dfm_two_grams = lapply(two_grams, dfm)
