@@ -1,0 +1,138 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r loading_libraries, echo=FALSE}
+library("quanteda")
+library("quanteda.textplots")
+library("quanteda.textstats")
+library("dplyr")
+require(readtext)
+library(ggplot2)
+```
+# Summary
+In this notebook we will try to build a simple n-gram based language model that predicts the next word based on the n-1 previous words.
+1. We will define metrics to evaluate the performance: perplexity and accuracy (at the first, second and third word)-
+2. We will try different hyperparameters for the model and assess the size and performance.
+3. We will correlate perplexity with others measures of accuracy
+4. We will assess wheter it its possible to reduce the size of the model without reducing performance.
+
+## Importing text and creating tokens
+
+```{r load_corpus, cache=TRUE, echo=TRUE}
+base_dir = "../data/en_US/"
+fnames = c("en_US.blogs.txt"
+           ,"en_US.news.txt"
+           ,"en_US.twitter.txt"
+           )
+
+# loading the raw text files
+raw_docs = lapply(paste0(base_dir,fnames), readtext)
+# creating corpuses
+docs = lapply(raw_docs, corpus)
+#doc = corpus(docs)
+
+# reshape corpuses to sentences
+docs = lapply(docs, corpus_reshape, to ="sentences")
+
+# sampling n sentences for performance
+docs = lapply(docs,corpus_sample, size = 5000)
+
+#doc = paste0(as.character(docs[[1]]),as.character(docs[[2]]),as.character(docs[[3]]))
+#doc = paste0(as.character(docs[1]),as.character(docs[2]),as.character(docs[3]))
+doc = c(as.character(docs[[1]]),as.character(docs[[2]]),as.character(docs[[3]]))
+doc = corpus(doc)
+#doc = corpus_reshape(doc, to= "documents")
+
+#doc = corpus(doc)
+
+# cleaning up the raw_docs variable as it takes up too 400MB RAM.
+raw_docs = NULL
+docs= NULL
+gc()
+```
+```{r create_tokens, cache=TRUE, echo=TRUE}
+# creating tokens
+toks = tokens(doc, 
+              remove_punct =T,  
+              remove_symbols = T,
+              remove_numbers = T,
+              remove_url = T)
+# print number of tokens
+#print(paste("Number of tokens:",ntoken(toks)))
+
+```
+
+```{r n_grams, fig.align = 'center', fig.width=10}
+# create two grams
+two_grams = tokens_ngrams(toks)
+# create two gram dfm 
+dfm_two_grams = dfm(two_grams)
+freq_two_grams = textstat_frequency(dfm_two_grams,n=1000)
+
+# transform frequencies to probabilities
+# caclculate n-1-gram counts, create set of (n-1) grams
+# create new column with n-1 words
+s = strsplit(freq_two_grams$feature, "_")
+s
+freq_two_grams = cbind(freq_two_grams, ng1 = sapply(s, `[[`, 1))
+freq_two_grams = cbind(freq_two_grams, ng2 = sapply(s, `[[`, 2))
+
+freq_two_grams_grp = freq_two_grams %>%
+  group_by(ng1) %>%
+  dplyr::summarise(frequency = sum(frequency)) %>%
+  as.data.frame()
+
+freq_two_grams_grp[freq_two_grams_grp$ng1 =="a",]$frequency
+
+calc_freq = function(row) {
+  ngram_frequency = as.integer(row[2])
+  ngram_minus_1 = row[6]
+  ng_minus_1_frequency = freq_two_grams_grp[freq_two_grams_grp$ng1 == ngram_minus_1,]$frequency
+  return (ngram_frequency/ng_minus_1_frequency)
+}
+
+freq_two_grams=cbind(freq_two_grams, prob_ng = apply(freq_two_grams, 1, calc_freq ))
+
+``` 
+
+```{r}
+create_n_gram_model = function(n = 2){
+  # create two grams
+  n_grams = tokens_ngrams(toks, n = n)
+  # create two gram dfm 
+  dfm_n_grams = dfm(n_grams)
+  freq_n_grams = textstat_frequency(dfm_n_grams,n=1000)
+  
+  # transform frequencies to probabilities
+  # caclculate n-1-gram counts, create set of (n-1) grams
+  # create new column with n-1 words
+  freq_n_grams= cbind(freq_n_grams, index_last_token = sapply(gregexpr("_", freq_n_grams$feature), "[[", n-1))
+  
+  freq_n_grams = cbind(freq_n_grams, first_tokens = apply(freq_three_grams, 1, function(row) { substr(row[1], start=1, stop=row[6]) }))
+
+  #freq_two_grams = cbind(freq_two_grams, ng1 = sapply(s, `[[`, 1))
+  #freq_two_grams = cbind(freq_two_grams, ng2 = sapply(s, `[[`, 2))
+  
+  freq_n_grams_grp = freq_n_grams %>%
+    group_by(first_tokens) %>%
+    dplyr::summarise(frequency = sum(frequency)) %>%
+    as.data.frame()
+  
+  #freq_n_grams_grp[freq_two_grams_grp$first_tokens =="a",]$frequency
+  
+  calc_freq = function(row) {
+    ngram_frequency = as.integer(row[2])
+    ngram_minus_1 = row[7]
+    ng_minus_1_frequency = freq_n_grams_grp[freq_n_grams_grp$first_tokens == ngram_minus_1,]$frequency
+    return (ngram_frequency/ng_minus_1_frequency)
+  }
+  
+  freq_n_grams=cbind(freq_n_grams, prob_ng = apply(freq_n_grams, 1, calc_freq ))
+  return (freq_n_grams)
+}
+
+freq_4_grams = create_n_gram_model(4)
+```
+
