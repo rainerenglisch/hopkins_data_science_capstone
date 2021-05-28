@@ -10,6 +10,10 @@ library("quanteda.textstats")
 library("dplyr")
 require(readtext)
 library(ggplot2)
+library(data.table)
+library(stringr)
+library(sqldf)
+
 ```
 # Summary
 In this notebook we will try to build a simple n-gram based language model that predicts the next word based on the n-1 previous words.
@@ -37,7 +41,7 @@ docs = lapply(raw_docs, corpus)
 docs = lapply(docs, corpus_reshape, to ="sentences")
 
 # sampling n sentences for performance
-docs = lapply(docs,corpus_sample, size = 5000)
+docs = lapply(docs,corpus_sample, size = 500000)
 
 #doc = paste0(as.character(docs[[1]]),as.character(docs[[2]]),as.character(docs[[3]]))
 #doc = paste0(as.character(docs[1]),as.character(docs[2]),as.character(docs[3]))
@@ -54,16 +58,18 @@ gc()
 ```
 ```{r create_tokens, cache=TRUE, echo=TRUE}
 # creating tokens
-toks = tokens(doc, 
+toks = tokens(doc, padding= T,
               remove_punct =T,  
               remove_symbols = T,
               remove_numbers = T,
-              remove_url = T)
+              remove_url = T) #%>%tokens_remove( stopwords("english"))
+doc=NULL
+gc()
 # print number of tokens
 #print(paste("Number of tokens:",ntoken(toks)))
 
 ```
-
+<!--
 ```{r n_grams, fig.align = 'center', fig.width=10}
 # create two grams
 two_grams = tokens_ngrams(toks)
@@ -75,7 +81,7 @@ freq_two_grams = textstat_frequency(dfm_two_grams,n=1000)
 # caclculate n-1-gram counts, create set of (n-1) grams
 # create new column with n-1 words
 s = strsplit(freq_two_grams$feature, "_")
-s
+#s
 freq_two_grams = cbind(freq_two_grams, ng1 = sapply(s, `[[`, 1))
 freq_two_grams = cbind(freq_two_grams, ng2 = sapply(s, `[[`, 2))
 
@@ -84,7 +90,7 @@ freq_two_grams_grp = freq_two_grams %>%
   dplyr::summarise(frequency = sum(frequency)) %>%
   as.data.frame()
 
-freq_two_grams_grp[freq_two_grams_grp$ng1 =="a",]$frequency
+#freq_two_grams_grp[freq_two_grams_grp$ng1 =="a",]$frequency
 
 calc_freq = function(row) {
   ngram_frequency = as.integer(row[2])
@@ -96,31 +102,39 @@ calc_freq = function(row) {
 freq_two_grams=cbind(freq_two_grams, prob_ng = apply(freq_two_grams, 1, calc_freq ))
 
 ``` 
-
+-->
 ```{r}
-create_n_gram_model = function(n = 2){
+create_n_gram_model = function(n = 2, n_freq_n_grams=1000000){
   # create two grams
   n_grams = tokens_ngrams(toks, n = n)
   # create two gram dfm 
   dfm_n_grams = dfm(n_grams)
-  freq_n_grams = textstat_frequency(dfm_n_grams,n=1000)
+  freq_n_grams = textstat_frequency(dfm_n_grams,n=n_freq_n_grams)
+  grams = sapply(freq_n_grams$feature, str_split, pattern="_")
+  # create seperate column for each gram
+  for (i in 1:n) {
+    #name = paste0("gram_", i)
+    freq_n_grams = cbind(freq_n_grams, gram = sapply(grams, `[[`, i))
+    colnames = colnames(freq_n_grams)[colnames(freq_n_grams) == "gram"] = paste0("gram_", i)
+  }
+  
+  
   
   # transform frequencies to probabilities
   # caclculate n-1-gram counts, create set of (n-1) grams
   # create new column with n-1 words
-  freq_n_grams= cbind(freq_n_grams, index_last_token = sapply(gregexpr("_", freq_n_grams$feature), "[[", n-1))
+  #freq_n_grams= cbind(freq_n_grams, index_last_token = sapply(gregexpr("_", freq_n_grams$feature), "[[", n-1))
   
-  freq_n_grams = cbind(freq_n_grams, first_tokens = apply(freq_three_grams, 1, function(row) { substr(row[1], start=1, stop=row[6]) }))
+  #freq_n_grams = cbind(freq_n_grams, first_tokens = apply(freq_n_grams, 1, function(row) { substr(row[1], start=1, stop=row[6]) }), stringsAsFactors=FALSE)
 
   #freq_two_grams = cbind(freq_two_grams, ng1 = sapply(s, `[[`, 1))
   #freq_two_grams = cbind(freq_two_grams, ng2 = sapply(s, `[[`, 2))
   
-  freq_n_grams_grp = freq_n_grams %>%
-    group_by(first_tokens) %>%
-    dplyr::summarise(frequency = sum(frequency)) %>%
-    as.data.frame()
+  #freq_n_grams_grp = freq_n_grams %>%
+  #  group_by(first_tokens) %>%
+  #  dplyr::summarise(frequency = sum(frequency)) %>%
+  #  as.data.frame()
   
-  #freq_n_grams_grp[freq_two_grams_grp$first_tokens =="a",]$frequency
   
   calc_freq = function(row) {
     ngram_frequency = as.integer(row[2])
@@ -129,10 +143,14 @@ create_n_gram_model = function(n = 2){
     return (ngram_frequency/ng_minus_1_frequency)
   }
   
-  freq_n_grams=cbind(freq_n_grams, prob_ng = apply(freq_n_grams, 1, calc_freq ))
+  #freq_n_grams=cbind(freq_n_grams, prob_ng = apply(freq_n_grams, 1, calc_freq ))
   return (freq_n_grams)
 }
 
-freq_4_grams = create_n_gram_model(4)
+dt_freq_5_grams = as.data.table(create_n_gram_model(5))
+#sqldf("select gram_1, gram_2, SUM(frequency) from dt_freq_5_grams  group by gram_1,gram_2 having gram_1 = 'i''d' and gram_2 IN ('die','eat','give','sleep')"  )
+sqldf("select gram_1, gram_2, gram_3, SUM(frequency) from dt_freq_5_grams  group by gram_1,gram_2 having gram_1 = 'about' and gram_2 = 'his'  ")
+#and gram_3 IN ('die','eat','give','sleep')"
+
 ```
 
