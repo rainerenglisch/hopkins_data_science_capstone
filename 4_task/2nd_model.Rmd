@@ -1,0 +1,98 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r loading_libraries, echo=FALSE}
+library("quanteda")
+library("quanteda.textplots")
+library("quanteda.textstats")
+library("dplyr")
+require(readtext)
+library(ggplot2)
+library(data.table)
+library(stringr)
+library(sqldf)
+
+```
+# Summary
+In this notebook we will try to build a simple n-gram based language model that predicts the next word based on the n-1 previous words.
+1. We will define metrics to evaluate the performance: perplexity and accuracy (at the first, second and third word)-
+2. We will try different hyperparameters for the model and assess the size and performance.
+3. We will correlate perplexity with others measures of accuracy
+4. We will assess wheter it its possible to reduce the size of the model without reducing performance.
+
+## Importing text and creating tokens
+
+```{r load_corpus, cache=TRUE, echo=TRUE}
+base_dir = "../data/en_US/"
+fnames = c("en_US.twitter.txt","en_US.blogs.txt","en_US.news.txt")
+
+create_n_gram_model = function(toks, n = 2, n_freq_n_grams=1000000){
+    # create two grams
+    n_grams = tokens_ngrams(toks, n = n)
+    # create two gram dfm 
+    dfm_n_grams = dfm(n_grams)
+    freq_n_grams = textstat_frequency(dfm_n_grams,n=n_freq_n_grams)
+    grams = sapply(freq_n_grams$feature, str_split, pattern="_")
+    # create separate column for each gram
+    for (i in 1:n) {
+      freq_n_grams = cbind(freq_n_grams, gram = sapply(grams, `[[`, i))
+      colnames = colnames(freq_n_grams)[colnames(freq_n_grams) == "gram"] = paste0("gram_", i)
+    }
+    
+    return (freq_n_grams)
+}
+
+dt_freq_n_grams = NULL
+for (fname in fnames) {
+  print(paste0("Processing ", fname))
+  # read plain text
+  raw_doc = readtext(paste0(base_dir,fname))
+  # create quanteda corpus
+  doc = corpus(raw_doc)
+  raw_doc = NULL
+  # transform to document per sentence
+  doc = corpus_reshape(doc, to ="sentences")
+  #doc=corpus_sample(doc, size = 1000)
+  toks = tokens(doc, padding= T,
+              remove_punct =T,  
+              remove_symbols = T,
+              remove_numbers = T,
+              remove_url = T)
+  doc = NULL
+  gc()
+  temp_dt_freq_n_grams = as.data.table(create_n_gram_model(toks,n=5),stringsAsFactors = FALSE) 
+  #, n_freq_n_grams=1000
+  temp_dt_freq_n_grams =sqldf("SELECT feature, frequency, docfreq, gram_1, gram_2, gram_3, gram_4 FROM temp_dt_freq_n_grams")
+  if (is.null(dt_freq_n_grams)){
+    dt_freq_n_grams = temp_dt_freq_n_grams
+    }
+  else{
+    dt_freq_n_grams = rbind(dt_freq_n_grams,temp_dt_freq_n_grams)
+    dt_freq_n_grams=sqldf("SELECT feature, SUM(frequency) AS frequency, SUM(docfreq) AS docfreq, min(gram_1) AS gram_1, min(gram_2) as gram_2, min(gram_3) AS gram_3, min(gram_4) as gram_4 FROM dt_freq_n_grams GROUP BY feature")
+  }
+  temp_dt_freq_n_grams = NULL
+  gc()
+}
+```
+
+```{r}
+sqldf("SELECT SUM(frequency), gram_1,gram_2,gram_3,gram_4 FROM dt_freq_n_grams GROUP BY gram_1, gram_2, gram_3 HAVING gram_1='for' and gram_2='the' and gram_3='first'")
+
+```
+
+
+```{r}
+
+
+
+
+sqldf("select gram_1, SUM(frequency) from dt_freq_n_grams  group by gram_1 having gram_1  IN ('novels','pictures','stories','movies')"  )
+
+sqldf("select gram_1, gram_2, SUM(frequency) from dt_freq_n_grams  group by gram_1,gram_2 having gram_1 = 'i''d' and gram_2 IN ('eat','give','die','sleep')"  )
+
+sqldf("select gram_1, gram_2, gram_3, SUM(frequency) from dt_freq_n_grams  group by gram_1,gram_2, gram_3 having gram_1 = 'and' and  gram_2 = 'i''d' and gram_3 IN ('eat','give','die','sleep')")
+
+```
+

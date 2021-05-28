@@ -41,7 +41,7 @@ docs = lapply(raw_docs, corpus)
 docs = lapply(docs, corpus_reshape, to ="sentences")
 
 # sampling n sentences for performance
-docs = lapply(docs,corpus_sample, size = 500000)
+docs = lapply(docs,corpus_sample, size = 750000)
 
 #doc = paste0(as.character(docs[[1]]),as.character(docs[[2]]),as.character(docs[[3]]))
 #doc = paste0(as.character(docs[1]),as.character(docs[2]),as.character(docs[3]))
@@ -148,9 +148,12 @@ create_n_gram_model = function(n = 2, n_freq_n_grams=1000000){
 }
 
 dt_freq_5_grams = as.data.table(create_n_gram_model(5))
-#sqldf("select gram_1, gram_2, SUM(frequency) from dt_freq_5_grams  group by gram_1,gram_2 having gram_1 = 'i''d' and gram_2 IN ('die','eat','give','sleep')"  )
-sqldf("select gram_1, gram_2, gram_3, SUM(frequency) from dt_freq_5_grams  group by gram_1,gram_2 having gram_1 = 'about' and gram_2 = 'his'  ")
-#and gram_3 IN ('die','eat','give','sleep')"
+
+sqldf("select gram_1, SUM(frequency) from dt_freq_5_grams  group by gram_1 having gram_1  IN ('novels','pictures','stories','movies')"  )
+
+sqldf("select gram_1, gram_2, SUM(frequency) from dt_freq_5_grams  group by gram_1,gram_2 having gram_1 = 'i''d' and gram_2 IN ('eat','give','die','sleep')"  )
+
+sqldf("select gram_1, gram_2, gram_3, SUM(frequency) from dt_freq_5_grams  group by gram_1,gram_2, gram_3 having gram_1 = 'and' and  gram_2 = 'i''d' and gram_3 IN ('eat','give','die','sleep')")
 
 ```
 
