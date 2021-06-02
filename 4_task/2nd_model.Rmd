@@ -25,8 +25,9 @@ In this notebook we will try to build a simple n-gram based language model that 
 ## Importing text and creating tokens
 
 ```{r load_corpus, cache=TRUE, echo=TRUE}
-base_dir = "../data/en_US/"
-fnames = c("en_US.twitter.txt","en_US.blogs.txt","en_US.news.txt")
+BASE_DIR = "../data/en_US/"
+FNAMES = c("en_US.twitter.txt","en_US.blogs.txt","en_US.news.txt")
+FNAME_DT = "freq_n_grams.Rda"
 
 create_n_gram_model = function(toks, n = 2, n_freq_n_grams=1000000){
     # create two grams
@@ -44,49 +45,80 @@ create_n_gram_model = function(toks, n = 2, n_freq_n_grams=1000000){
     return (freq_n_grams)
 }
 
-dt_freq_n_grams = NULL
-for (fname in fnames) {
-  print(paste0("Processing ", fname))
-  # read plain text
-  raw_doc = readtext(paste0(base_dir,fname))
-  # create quanteda corpus
-  doc = corpus(raw_doc)
-  raw_doc = NULL
-  # transform to document per sentence
-  doc = corpus_reshape(doc, to ="sentences")
-  #doc=corpus_sample(doc, size = 1000)
-  toks = tokens(doc, padding= T,
-              remove_punct =T,  
-              remove_symbols = T,
-              remove_numbers = T,
-              remove_url = T)
-  doc = NULL
-  gc()
-  temp_dt_freq_n_grams = as.data.table(create_n_gram_model(toks,n=5),stringsAsFactors = FALSE) 
-  #, n_freq_n_grams=1000
-  temp_dt_freq_n_grams =sqldf("SELECT feature, frequency, docfreq, gram_1, gram_2, gram_3, gram_4 FROM temp_dt_freq_n_grams")
-  if (is.null(dt_freq_n_grams)){
-    dt_freq_n_grams = temp_dt_freq_n_grams
+if (!file.exists(FNAME_DT)) {
+  dt_freq_n_grams = NULL
+  for (fname in FNAMES) {
+    print(paste0("Processing ", fname))
+    # read plain text
+    raw_doc = readtext(paste0(BASE_DIR,fname))
+    # create quanteda corpus
+    doc = corpus(raw_doc)
+    raw_doc = NULL
+    # transform to document per sentence
+    doc = corpus_reshape(doc, to ="sentences")
+    #doc=corpus_sample(doc, size = 1000)
+    toks = tokens(doc, padding= T,
+                remove_punct =T,  
+                remove_symbols = T,
+                remove_numbers = T,
+                remove_url = T)
+    doc = NULL
+    gc()
+    temp_dt_freq_n_grams = as.data.table(create_n_gram_model(toks,n=5),stringsAsFactors = FALSE) 
+    #, n_freq_n_grams=1000
+    temp_dt_freq_n_grams =sqldf("SELECT feature, frequency, docfreq, gram_1, gram_2, gram_3, gram_4 FROM temp_dt_freq_n_grams")
+    if (is.null(dt_freq_n_grams)){
+      dt_freq_n_grams = temp_dt_freq_n_grams
+      }
+    else{
+      dt_freq_n_grams = rbind(dt_freq_n_grams,temp_dt_freq_n_grams)
+      dt_freq_n_grams=sqldf("SELECT feature, SUM(frequency) AS frequency, SUM(docfreq) AS docfreq, min(gram_1) AS gram_1, min(gram_2) as gram_2, min(gram_3) AS gram_3, min(gram_4) as gram_4 FROM dt_freq_n_grams GROUP BY feature")
     }
-  else{
-    dt_freq_n_grams = rbind(dt_freq_n_grams,temp_dt_freq_n_grams)
-    dt_freq_n_grams=sqldf("SELECT feature, SUM(frequency) AS frequency, SUM(docfreq) AS docfreq, min(gram_1) AS gram_1, min(gram_2) as gram_2, min(gram_3) AS gram_3, min(gram_4) as gram_4 FROM dt_freq_n_grams GROUP BY feature")
+    temp_dt_freq_n_grams = NULL
+    gc()
   }
-  temp_dt_freq_n_grams = NULL
-  gc()
+  # save data frame
+  save(dt_freq_n_grams, file =FNAME_DT, compress=FALSE)
+} else {
+  dt_freq_n_grams=load(FNAME_DT)
 }
+
+```
+```{r}
+# calculate probability of word sequence 
+w = c("I","have","a","dream")
+
+get_count_ngram = function(w) {
+  GROUPBY_CLAUSE = ""
+  HAVING_CLAUSE = ""
+  i = 1
+  for (e in w) {
+    GROUPBY_CLAUSE = paste0(GROUPBY_CLAUSE,"gram_",i)
+    HAVING_CLAUSE = paste0(HAVING_CLAUSE,"gram_",i," = '",e,"'")
+    if (i < length(w)) {
+      GROUPBY_CLAUSE = paste0(GROUPBY_CLAUSE, " AND ")
+      HAVING_CLAUSE = paste0(HAVING_CLAUSE, " AND ")
+    }
+    i=i+1
+  }
+  sql_stmt = paste0("SELECT SUM(frequency) FROM dt_freq_n_grams WHERE ", HAVING_CLAUSE)
+  print(sql_stmt)
+  result = sqldf(sql_stmt)
+  return (result)#[1,1])
+}
+w = c("i","have","a","dream")
+count_ngram = get_count_ngram(w)
+count_n_minus_gram = get_count_ngram(w[1:length(w)-1])
 ```
 
 ```{r}
+#https://en.wikipedia.org/wiki/Katz's_back-off_model
 sqldf("SELECT SUM(frequency), gram_1,gram_2,gram_3,gram_4 FROM dt_freq_n_grams GROUP BY gram_1, gram_2, gram_3 HAVING gram_1='for' and gram_2='the' and gram_3='first'")
 
 ```
 
 
 ```{r}
-
-
-
 
 sqldf("select gram_1, SUM(frequency) from dt_freq_n_grams  group by gram_1 having gram_1  IN ('novels','pictures','stories','movies')"  )
 
