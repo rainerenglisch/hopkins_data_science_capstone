@@ -27,13 +27,16 @@ In this notebook we will try to build a simple n-gram based language model that 
 ```{r load_corpus, cache=TRUE, echo=TRUE}
 BASE_DIR = "../data/en_US/"
 FNAMES = c("en_US.twitter.txt","en_US.blogs.txt","en_US.news.txt")
-FNAME_DT = "freq_n_grams.Rda"
+FNAME_DT = "./freq_n_grams.Rds"
 
 create_n_gram_model = function(toks, n = 2, n_freq_n_grams=1000000){
     # create two grams
+    print(paste0("creating ",n,"ngrams"))
     n_grams = tokens_ngrams(toks, n = n)
     # create two gram dfm 
+    print("creating dfm for n_grams")
     dfm_n_grams = dfm(n_grams)
+    print("calculating frequencies from dfm")
     freq_n_grams = textstat_frequency(dfm_n_grams,n=n_freq_n_grams)
     grams = sapply(freq_n_grams$feature, str_split, pattern="_")
     # create separate column for each gram
@@ -78,37 +81,78 @@ if (!file.exists(FNAME_DT)) {
     gc()
   }
   # save data frame
-  save(dt_freq_n_grams, file =FNAME_DT, compress=FALSE)
+  saveRDS(dt_freq_n_grams, file =FNAME_DT)#, compress=FALSE)
 } else {
-  dt_freq_n_grams=load(FNAME_DT)
+  dt_freq_n_grams=readRDS(FNAME_DT)
 }
 
 ```
 ```{r}
+# kneyser-ney smoothing constand
+d = 0.75
 # calculate probability of word sequence 
 w = c("I","have","a","dream")
 
-get_count_ngram = function(w) {
+# p continuation
+get_count_n_grams = function(n=2) {
+  sql_stmt = "SELECT COUNT(DISTINCT gram_1 || '__' || gram_2) FROM dt_freq_n_grams"
+  result = sqldf(sql_stmt)
+  return (result[1,1])
+}
+
+get_count_preceding = function(w) {
+  sql_stmt = paste0("SELECT COUNT(DISTINCT gram_1) FROM dt_freq_n_grams WHERE gram_2 = '",w,"'")
+  result = sqldf(sql_stmt)
+  return (result[1,1])
+}
+
+get_for_ngram = function(w, select = "SUM(frequency)") {
   GROUPBY_CLAUSE = ""
-  HAVING_CLAUSE = ""
+  WHERE_CLAUSE = ""
   i = 1
   for (e in w) {
-    GROUPBY_CLAUSE = paste0(GROUPBY_CLAUSE,"gram_",i)
-    HAVING_CLAUSE = paste0(HAVING_CLAUSE,"gram_",i," = '",e,"'")
+    WHERE_CLAUSE = paste0(WHERE_CLAUSE,"gram_",i," = '",e,"'")
     if (i < length(w)) {
-      GROUPBY_CLAUSE = paste0(GROUPBY_CLAUSE, " AND ")
-      HAVING_CLAUSE = paste0(HAVING_CLAUSE, " AND ")
+      WHERE_CLAUSE = paste0(WHERE_CLAUSE, " AND ")
     }
     i=i+1
   }
-  sql_stmt = paste0("SELECT SUM(frequency) FROM dt_freq_n_grams WHERE ", HAVING_CLAUSE)
+  sql_stmt = paste0("SELECT SUM(frequency) AS frequency FROM dt_freq_n_grams WHERE ", WHERE_CLAUSE)
   print(sql_stmt)
   result = sqldf(sql_stmt)
-  return (result)#[1,1])
+  return (result[1,1])
+}
+
+# counts how often the token occure
+C_kn = function(tokens) {
+  # if token sequence is greater than one then just count the frequency of the tokens in the ngram table
+  count = get_for_ngram(tokens)
+  return (count)
+}
+
+lambda_kn = function(tokens, d=0.75) {
+  l = (d / C_kn(tokens)) * get_for_ngram(tokens, select = "COUNT(*)")
+  return (l)
+}
+# calculate the kneser ney smoothing probability of n-gram
+P_kn = function(tokens, d=0.75) {
+  print("P_kn")
+  print(tokens)
+  #token_history = tokens[(length(tokens)-n+1):length(tokens)]
+  token_history = tokens[1:length(tokens)-1]
+  print(token_history)
+  result = max(C_kn(tokens)-d,0)/C_kn(token_history) 
+  if (length(token_history) > 1) { 
+    result = result + lambda_kn(token_history,d=d) * P_kn(tokens[2:length(tokens)], d=d)
+  } else {
+    # if token sequence equals one than account for unigram by continuation probability
+    result = result + lambda_kn(token_history,d=d) * get_count_preceding(tokens) / get_count_n_grams()
+  }
+  return (result)
 }
 w = c("i","have","a","dream")
-count_ngram = get_count_ngram(w)
-count_n_minus_gram = get_count_ngram(w[1:length(w)-1])
+P_kn(w)
+P_kn(c("i","have","a","car"))
 ```
 
 ```{r}
