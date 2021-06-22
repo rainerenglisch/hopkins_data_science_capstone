@@ -13,6 +13,8 @@ library(ggplot2)
 library(data.table)
 library(stringr)
 library(sqldf)
+library(memoise)
+#library(Dict)
 
 ```
 # Summary
@@ -24,14 +26,14 @@ In this notebook we will try to build a simple n-gram based language model that 
 
 ## Importing text and creating tokens
 
-```{r load_corpus, cache=TRUE, echo=TRUE}
+```{r load_corpus, cache=FALSE, echo=TRUE}
 BASE_DIR = "../data/en_US/"
 FNAMES = c("en_US.twitter.txt","en_US.blogs.txt","en_US.news.txt")
 FNAME_DT = "./freq_n_grams.Rds"
 
 create_n_gram_model = function(toks, n = 2, n_freq_n_grams=1000000){
     # create two grams
-    print(paste0("creating ",n,"ngrams"))
+    print(paste0("creating ",n," ngrams"))
     n_grams = tokens_ngrams(toks, n = n)
     # create two gram dfm 
     print("creating dfm for n_grams")
@@ -67,7 +69,7 @@ if (!file.exists(FNAME_DT)) {
                 remove_url = T)
     doc = NULL
     gc()
-    temp_dt_freq_n_grams = as.data.table(create_n_gram_model(toks,n=5),stringsAsFactors = FALSE) 
+    temp_dt_freq_n_grams = as.data.table(create_n_gram_model(toks,n=4),stringsAsFactors = FALSE) 
     #, n_freq_n_grams=1000
     temp_dt_freq_n_grams =sqldf("SELECT feature, frequency, docfreq, gram_1, gram_2, gram_3, gram_4 FROM temp_dt_freq_n_grams")
     if (is.null(dt_freq_n_grams)){
@@ -87,88 +89,176 @@ if (!file.exists(FNAME_DT)) {
 }
 
 ```
+
 ```{r}
 # kneyser-ney smoothing constand
 d = 0.75
 # calculate probability of word sequence 
 w = c("I","have","a","dream")
 
+mem_sqldf = memoise(sqldf)
+
 # p continuation
 get_count_n_grams = function(n=2) {
   sql_stmt = "SELECT COUNT(DISTINCT gram_1 || '__' || gram_2) FROM dt_freq_n_grams"
-  result = sqldf(sql_stmt)
+  #print(sql_stmt)
+  result = mem_sqldf(sql_stmt)
+  print(paste0("get_count_n_grams result", ":",result[1,1]))
   return (result[1,1])
 }
 
-get_count_preceding = function(w) {
-  sql_stmt = paste0("SELECT COUNT(DISTINCT gram_1) FROM dt_freq_n_grams WHERE gram_2 = '",w,"'")
-  result = sqldf(sql_stmt)
+create_n_gram_where_clause = function (token_sequence) {
+  where_clause = ""
+  i = 1
+  for (e in token_sequence) {
+    #e = str_replace(e, "'" , "''")
+
+    where_clause = paste0(where_clause,"gram_",i," = '",e,"'")
+    if (i < length(token_sequence)) {
+      where_clause = paste0(where_clause, " AND ")
+    }
+    i=i+1
+  }
+  return (where_clause)
+}
+
+get_count_preceding = function(token_history) {
+  where_clause = create_n_gram_where_clause(token_history)
+  distinct_ngram =  paste0("gram_",length(token_history) + 1)
+  sql_stmt = paste0("SELECT COUNT(DISTINCT ",distinct_ngram,") FROM dt_freq_n_grams WHERE ",where_clause)
+  print(sql_stmt)
+  result = mem_sqldf(sql_stmt)
+  print(paste0("get_count_preceding", ":",result[1,1]))
   return (result[1,1])
 }
 
 get_for_ngram = function(w, select = "SUM(frequency)") {
-  GROUPBY_CLAUSE = ""
-  WHERE_CLAUSE = ""
-  i = 1
-  for (e in w) {
-    WHERE_CLAUSE = paste0(WHERE_CLAUSE,"gram_",i," = '",e,"'")
-    if (i < length(w)) {
-      WHERE_CLAUSE = paste0(WHERE_CLAUSE, " AND ")
-    }
-    i=i+1
+  print( paste0("get_for_ngram(",toString(w),",",select,")"))
+  where_clause = create_n_gram_where_clause(w)
+  
+  sql_stmt = paste0("SELECT SUM(frequency) AS frequency FROM dt_freq_n_grams WHERE ", where_clause)
+  #print(paste0("sql_stmt: ",sql_stmt))
+  #print(sql_stmt)
+  result = mem_sqldf(sql_stmt)
+  print(paste0("sql_stmt: ",sql_stmt,":", result))
+  
+  # if n-gram does not exist then return 0 frequency
+  if (is.na(result[1,1])) {
+    return_result = 0
+  } else
+  { return_result = result[1,1]
   }
-  sql_stmt = paste0("SELECT SUM(frequency) AS frequency FROM dt_freq_n_grams WHERE ", WHERE_CLAUSE)
-  print(sql_stmt)
-  result = sqldf(sql_stmt)
-  return (result[1,1])
+  return (return_result)
+}
+
+discount_for_count = function(count)  {
+  discount = 0.75
+  if (count == 0) {
+    #count = 0.000027
+    discount = -0.000027
+  } else {
+    if (count ==1) {
+      #count = 0.446
+      discount = 1-0.446
+    } 
+  }
+  return (list(count = count-discount, discount=discount))
 }
 
 # counts how often the token occure
 C_kn = function(tokens) {
-  # if token sequence is greater than one then just count the frequency of the tokens in the ngram table
+  print(paste0("C_kn(",toString(tokens),")"))
   count = get_for_ngram(tokens)
-  return (count)
+  
+  # absolute discounting
+  print(paste0("Apply discounting for n_gram_counts: ",count))
+  result = discount_for_count(count)
+  print(paste0("C_kn(",toString(tokens),"): ",typeof(count),", ",count,", discounted: ",result$count))
+  return (result)
 }
 
 lambda_kn = function(tokens, d=0.75) {
-  l = (d / C_kn(tokens)) * get_for_ngram(tokens, select = "COUNT(*)")
+  C_kn_tokens = C_kn(tokens)$count
+  #c_result = C_kn(tokens)
+  d_C_kn = (d / C_kn_tokens)
+  #count_n_grams =get_for_ngram(tokens, select = "COUNT(*)")
+  count_n_grams =  get_count_preceding(tokens)
+  count_n_grams_discounted = discount_for_count(count_n_grams)
+  #l = d_C_kn * count_n_grams
+  l = d_C_kn * count_n_grams_discounted$count
+  
+  print(paste0("lambda_kn(", toString(tokens), ", ",d,") = C_kn_tokens: ",C_kn_tokens,",d_C_kn: ", d_C_kn, ", count_n_grams: ", count_n_grams_discounted$count, ", l: ",l))
   return (l)
 }
 # calculate the kneser ney smoothing probability of n-gram
 P_kn = function(tokens, d=0.75) {
-  print("P_kn")
-  print(tokens)
+  print(paste0("P_kn(",toString(tokens),")"))
+  #print(tokens)
   #token_history = tokens[(length(tokens)-n+1):length(tokens)]
   token_history = tokens[1:length(tokens)-1]
-  print(token_history)
-  result = max(C_kn(tokens)-d,0)/C_kn(token_history) 
+  #print(token_history)
+  
+  #result = max(C_kn(tokens)-d,0) / C_kn(token_history)
+  C_kn_tokens = C_kn(tokens)
+  C_kn_token_history = C_kn(token_history)
+  result = max(C_kn_tokens$count,0) / C_kn_token_history$count
+  print(paste0("max(C_kn(",toString(tokens),",0))/C_kn(",toString(token_history),"): ",result))
+  # if result is NaN (because of token_history has freq 0) then set to 0
+  #print(paste0("testing for nan",result,is.nan(result)))
+  if (is.nan(result)) {
+    #print("result is NaN - thus setting to 0")
+    result =0
+  }
+  print(paste0("result before lowergram prob: ",result))
   if (length(token_history) > 1) { 
-    result = result + lambda_kn(token_history,d=d) * P_kn(tokens[2:length(tokens)], d=d)
+    my_lambda_kn = lambda_kn(token_history,d=C_kn_tokens$discount)
+    my_P_kn = P_kn(tokens[2:length(tokens)])#, d=C_kn_tokens$discount)
+    print(paste0("my_lambda_kn: ",my_lambda_kn, ", my_P_kn: ",my_P_kn))
+    result = result + my_lambda_kn * my_P_kn
+    #print(result)
   } else {
     # if token sequence equals one than account for unigram by continuation probability
-    result = result + lambda_kn(token_history,d=d) * get_count_preceding(tokens) / get_count_n_grams()
+    my_lambda_kn = lambda_kn(token_history,d=d)
+    my_count_preceding =  get_count_preceding(tokens)
+    count_bi_grams = get_count_n_grams(n=2)
+    print(paste0("my_lambda_kn: ",my_lambda_kn,", my_count_preceding: ", my_count_preceding, ", count_bi_grams: ",count_bi_grams))
+    result = result + my_lambda_kn * my_count_preceding / count_bi_grams
   }
+  print(paste0("result after lowergram prob: ",result))
+
   return (result)
 }
-w = c("i","have","a","dream")
-P_kn(w)
-P_kn(c("i","have","a","car"))
+
+
 ```
 
 ```{r}
-#https://en.wikipedia.org/wiki/Katz's_back-off_model
-sqldf("SELECT SUM(frequency), gram_1,gram_2,gram_3,gram_4 FROM dt_freq_n_grams GROUP BY gram_1, gram_2, gram_3 HAVING gram_1='for' and gram_2='the' and gram_3='first'")
+get_probabilities_for = function(history_token, tokens) {
+  result_table = NULL
+  for (following_token in tokens) {
+    token_seq = c(history_token, following_token)
+    print(paste0("Calculating prob for ",toString(token_seq)))
+    prob = P_kn(tokens = token_seq)
+    print(prob)
+    result_row = data.frame(tokens= c(toString(token_seq)),prob=c(prob))
+    if (is.null(result_table)) {
+      result_table = result_row
+    } else {
+      result_table = rbind(result_table, result_row)
+    }
+  }
+  return (result_table)
+}
 
+#get_probabilities_for(c("live","and", "i'd"), c("sleep","die","eat","give"))
+result=get_probabilities_for(c("live","and", "i''d"), c("sleep"))#,"die","eat","give"))
+result
 ```
 
 
 ```{r}
-
-sqldf("select gram_1, SUM(frequency) from dt_freq_n_grams  group by gram_1 having gram_1  IN ('novels','pictures','stories','movies')"  )
-
-sqldf("select gram_1, gram_2, SUM(frequency) from dt_freq_n_grams  group by gram_1,gram_2 having gram_1 = 'i''d' and gram_2 IN ('eat','give','die','sleep')"  )
-
-sqldf("select gram_1, gram_2, gram_3, SUM(frequency) from dt_freq_n_grams  group by gram_1,gram_2, gram_3 having gram_1 = 'and' and  gram_2 = 'i''d' and gram_3 IN ('eat','give','die','sleep')")
-
+#result2=get_probabilities_for(c("i","have","a"), c("dream","car","sun","dog"))
+result2=get_probabilities_for(c("i","have","a"), c("dream"))
+result2
 ```
 
