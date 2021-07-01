@@ -456,7 +456,8 @@ probability_sentence = function(sentence, max_hist=4, smoothing=FALSE) {
 }
 
 probability_corpus = function(corpus, max_hist=4, smoothing=FALSE) {
-  prob_list = c()
+  #prob_list = c()
+  prob = 0
   # iterate sentences
   for (sentence in corpus) {
     print(sentence)
@@ -468,10 +469,14 @@ probability_corpus = function(corpus, max_hist=4, smoothing=FALSE) {
                       remove_url = T)[[1]]
     print(paste0("tok_sent: ",toString(tok_sent)))
     p_i = probability_sentence(tok_sent, max_hist, smoothing)
-    prob_list = c(prob_list,p_i)
+    #prob_list = c(prob_list,p_i)
+    prob = prob + log2(p_i)
   }
-  print(prob_list)
-  return (prod(prob_list))
+  #print(prob_list)
+  print(prob)
+  #return (prod(prob_list))
+  #return (sum(log2(prob_list)))#
+  return (prob)
 }
 
 cross_entropy_corpus = function(corpus, max_hist=4, smoothing=FALSE) {
@@ -481,7 +486,8 @@ cross_entropy_corpus = function(corpus, max_hist=4, smoothing=FALSE) {
                                       remove_symbols = T,
                                       remove_numbers = T,
                                       remove_url = T))
-  entropy = - log2(prob_corpus) / corpus_token_length
+  #entropy = - log2(prob_corpus) / corpus_token_length
+  entropy = - (prob_corpus) / corpus_token_length
   print(paste0("entropy: ",entropy))
   return (entropy)
 }
@@ -491,7 +497,7 @@ perplexity_corpus = function(corpus, max_hist=4, smoothing=FALSE) {
   print(paste0("perplexity: ",perplexity))
   return (perplexity)
 }
-perplexity_corpus(doc_test_all[1:10])
+perplexity_corpus(doc_test_all[1:10])#,max_hist=3)
 
 cross_entropy_corpus(doc_test_all[1:100])
 
