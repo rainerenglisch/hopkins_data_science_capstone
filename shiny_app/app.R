@@ -42,17 +42,21 @@ server <- function(input, output) {
   output$textOutput = renderText({
     text_split = str_split(str_trim(input$textInput), pattern=" ", simplify = TRUE)
   
-    result = n_grams[[4]][as.list(text_split[(length(text_split)-2):length(text_split)]),c("gram_4","p_kn"), on = c("gram_1","gram_2","gram_3")]
-    if (is.na(result$p_kn)) {
+    if (length(text_split)>=3) {
+      result = n_grams[[4]][as.list(text_split[(length(text_split)-2):length(text_split)]),c("gram_4","p_kn"), on = c("gram_1","gram_2","gram_3")]
+    }      
+    if (length(text_split)==2 | is.na(result$p_kn)) {
       result = n_grams[[3]][as.list(text_split[(length(text_split)-1):length(text_split)]),c("gram_3","p_kn"), on = c("gram_1","gram_2")]
-      if (is.na(result$p_kn)) {
+    }
+    if (length(text_split)==1 | is.na(result$p_kn)) {
         result = n_grams[[2]][as.list(text_split[length(text_split)]),c("gram_2","p_kn"), on = c("gram_1")]
         # for no word entered, need BOS 2-gram
         # if no word found use unigram?
-      }
     }
-    print(as.character(result[1,1][[1]]))
-    as.character(result[1,1][[1]])
+    result=result[order(result$p_kn, decreasing = TRUE),]  
+    print(lapply(result[1:3,1], as.character))
+    #as.character(result[1,1][[1]])
+    paste0(lapply(result[1:3,1], as.character),", ")
     })
   
 }

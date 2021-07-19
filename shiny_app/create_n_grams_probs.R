@@ -1,19 +1,36 @@
-library("quanteda")
-library("quanteda.textplots")
-library("quanteda.textstats")
-library("dplyr")
-require(readtext)
-library(ggplot2)
+#library("quanteda")
+#library("quanteda.textplots")
+#library("quanteda.textstats")
+#library("dplyr")
+#require(readtext)
+#library(ggplot2)
 library(data.table)
 library(stringr)
-library(sqldf)
+#library(sqldf)
 library(memoise)
+#library(foreach)
+#library(doParallel)
+
+args = commandArgs(trailingOnly=TRUE)
+
+n_gram_from = 1
+n_gram_to = 1
+
+if (length(args)==2) {
+  n_gram_from = args[1]
+  n_gram_to = args[2]
+  print(paste0("Using parameters: n_gram_from: ",n_gram_from,", n_gram_to: ",n_gram_to))
+}
+
 
 BASE_DIR2="./"
 
 FNAMES_N_GRAMS = paste0(BASE_DIR2,c("freq_1_grams.Rds","freq_2_grams.Rds","freq_3_grams.Rds","freq_4_grams.Rds"))
 FNAMES_N_GRAMS_PROBS = paste0(BASE_DIR2,c("freq_1_grams_probs.Rds","freq_2_grams_probs.Rds","freq_3_grams_probs.Rds","freq_4_grams_probs.Rds"))
 n_grams = list()
+
+
+
 
 for (n_i in 1:4) {
   n_grams=append(n_grams, list(readRDS(FNAMES_N_GRAMS[n_i])))
@@ -211,10 +228,12 @@ N_c = function(freq,history , comparison = "equals", verbose=FALSE) {
   return (result+1)
 }
 
+mem_N_c = memoise(N_c)
+
 lambda = function(history) {
-  l = D1*N_c(1,history)
-  l = l + D2*N_c(2,history)
-  l = l + D3*N_c(3,history, comparison="greater")
+  l = D1*mem_N_c(1,history) #N_c(1,history)
+  l = l + D2*mem_N_c(2,history) # N_c(2,history)
+  l = l + D3*mem_N_c(3,history, comparison="greater") # N_c(3,history, comparison="greater")
   l = l/count_continuation(history)
   return (l)
 }
@@ -255,37 +274,68 @@ evaluate = function(history_tokens,follow_tokens) {
 }  
 
 # decrease size of n_grams
-freq_max = 1
-for (n_i in 1:4) {
-  for (freq_i in 1:freq_max) {
-    n_rows_before = n_grams[[n_i]][,.N]
-    n_rows_freq_1 = n_grams[[n_i]][frequency==freq_i,.N]
-    print(paste0("Reducing ",n_i,"-gram ",sprintf(n_rows_freq_1/n_rows_before*100,fmt = '%#.1f'),"% from ",
-                 n_rows_before, " to ",n_rows_before-n_rows_freq_1," grams"))
-    n_grams[[n_i]] = n_grams[[n_i]][frequency > freq_i]
-  }
-}
+#freq_max = 4
+#for (n_i in 3:4) {
+#  for (freq_i in 1:freq_max) {
+#    n_rows_before = n_grams[[n_i]][,.N]
+#    n_rows_freq_1 = n_grams[[n_i]][frequency==freq_i,.N]
+#    print(paste0("Reducing ",n_i,"-gram ",sprintf(n_rows_freq_1/n_rows_before*100,fmt = '%#.1f'),"% from ",
+#                 n_rows_before, " to ",n_rows_before-n_rows_freq_1," grams"))
+#    n_grams[[n_i]] = n_grams[[n_i]][frequency > freq_i]
+#  }
+#}
+
+#setup parallel backend to use many processors
+#cores=detectCores()
+#cl <- makeCluster(4)#cores[1]-1) #not to overload your computer
+#registerDoParallel(cl)
+
+#freq_min = 2
+freqs_min = c(1,3,4,5)
+
+#https://stackoverflow.com/questions/25431307/r-data-table-apply-function-to-rows-using-columns-as-arguments
+
 
 # calculate p_kn for all n_grams for 1 to 4
-for (n_i in 1:1) {#3) {
-  print(paste0("calculating probs for ",n_i,"_grams with ",nrow(n_grams[[n_i]])," rows."))
-  for (row in 1:nrow(n_grams[[n_i]])) {
-    if (row %% 1000 == 0) {
-      print(paste0(sprintf(row / nrow(n_grams[[n_i]])*100, fmt = '%#.4f') ,"% processed."))
+for (n_i in n_gram_from:n_gram_to) {#1:4) {
+#foreach(n_i=1:2, .inorder=FALSE, .verbose=TRUE) %dopar% {
+  nrows_grams = nrow(n_grams[[n_i]])
+  print(paste0("calculating probs for ",n_i,"_grams with ",nrows_grams," rows."))
+  #for (row in 1:nrow(n_grams[[n_i]])) {
+
+  
+  #for (row in n_grams[[n_i]][frequency >= freq_min,]) {
+  for (row_i in 1:nrows_grams) {
+    if (row_i %% 50000 == 1) {
+      print(paste0(Sys.time(),", ",sprintf(row_i / nrows_grams*100, fmt = '%#.4f') ,"% processed with with min freq.", freqs_min[n_i]))
     }
-    
+    row = n_grams[[n_i]][row_i,]
+    #if (n_grams[[n_i]][row,"frequency"]$frequency < freq_min) {
+    if (row$frequency < freqs_min[n_i]) {
+      #print("skipping row")
+      next
+    }
     if (n_i == 1) {
-      gram = as.matrix(n_grams[[n_i]][row,  c("gram_1")])
+      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1")])
+      gram = as.matrix(row$gram_1)
     } else if (n_i == 2) {
-      gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2")])
-    } else if (n_i == 1) {
-      gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3")])
+      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2")])
+      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2))
+    } else if (n_i == 3) {
+      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3")])
+      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2,row$gram_3))
+    } else if (n_i ==4) {
+      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3","gram_4")])
+      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2),as.matrix(row$gram_3),as.matrix(row$gram_4))
     }
     p = p_kn(gram, smoothing=FALSE)
-    n_grams[[n_i]][row, "p_kn"] = p
+    n_grams[[n_i]][row_i, "p_kn"] = p
+    #row$p_kn=p
   }
   saveRDS(n_grams[[n_i]], file =FNAMES_N_GRAMS_PROBS[n_i])
+  
 }
+#stopCluster(cl)
 
 for (n_i in 1:4) {
   n_grams=append(n_grams, list(readRDS(FNAMES_N_GRAMS_PROBS[n_i])))
