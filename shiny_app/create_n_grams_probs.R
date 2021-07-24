@@ -1,3 +1,5 @@
+options(max.print = .Machine$integer.max)
+
 #library("quanteda")
 #library("quanteda.textplots")
 #library("quanteda.textstats")
@@ -178,6 +180,7 @@ N_c_around = function(tokens, verbose=FALSE) {
 
 # count of n-grams with frequency starting with history
 N_c = function(freq,history , comparison = "equals", verbose=FALSE) {
+  #print(paste0("N_c(", freq, ", ", history, ", ", comparison, ")"))
   len_hist = length(history)
   if (len_hist==0) {
     if (comparison=="equals" ){
@@ -228,7 +231,8 @@ N_c = function(freq,history , comparison = "equals", verbose=FALSE) {
   return (result+1)
 }
 
-mem_N_c = memoise(N_c)
+#mem_N_c = memoise(N_c)
+mem_N_c = N_c
 
 lambda = function(history) {
   l = D1*mem_N_c(1,history) #N_c(1,history)
@@ -239,6 +243,7 @@ lambda = function(history) {
 }
 
 p_kn = function(tokens, smoothing = FALSE) {
+  #print(paste0("p_kn(", toString(tokens), ")"))
   count_tokens = count(tokens)
   tokens_history = tokens[1:length(tokens)-1]
   if (!smoothing) {
@@ -290,53 +295,77 @@ evaluate = function(history_tokens,follow_tokens) {
 #cl <- makeCluster(4)#cores[1]-1) #not to overload your computer
 #registerDoParallel(cl)
 
-#freq_min = 2
-freqs_min = c(1,3,4,5)
+
+#freqs_min = c(1,3,4,5)
+freqs_min = c(1,10,10,100)
 
 #https://stackoverflow.com/questions/25431307/r-data-table-apply-function-to-rows-using-columns-as-arguments
 
 
 # calculate p_kn for all n_grams for 1 to 4
-for (n_i in n_gram_from:n_gram_to) {#1:4) {
+for (n_i in n_gram_from:n_gram_to) { #1:4) {
 #foreach(n_i=1:2, .inorder=FALSE, .verbose=TRUE) %dopar% {
-  nrows_grams = nrow(n_grams[[n_i]])
+  #nrows_grams = nrow(n_grams[[n_i]])
+  nrows_grams = n_grams[[n_i]][frequency >= freqs_min[n_i],.N]
   print(paste0("calculating probs for ",n_i,"_grams with ",nrows_grams," rows."))
   #for (row in 1:nrow(n_grams[[n_i]])) {
 
-  
-  #for (row in n_grams[[n_i]][frequency >= freq_min,]) {
-  for (row_i in 1:nrows_grams) {
-    if (row_i %% 50000 == 1) {
-      print(paste0(Sys.time(),", ",sprintf(row_i / nrows_grams*100, fmt = '%#.4f') ,"% processed with with min freq.", freqs_min[n_i]))
-    }
-    row = n_grams[[n_i]][row_i,]
-    #if (n_grams[[n_i]][row,"frequency"]$frequency < freq_min) {
-    if (row$frequency < freqs_min[n_i]) {
-      #print("skipping row")
-      next
-    }
-    if (n_i == 1) {
-      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1")])
-      gram = as.matrix(row$gram_1)
-    } else if (n_i == 2) {
-      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2")])
-      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2))
-    } else if (n_i == 3) {
-      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3")])
-      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2,row$gram_3))
-    } else if (n_i ==4) {
-      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3","gram_4")])
-      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2),as.matrix(row$gram_3),as.matrix(row$gram_4))
-    }
-    p = p_kn(gram, smoothing=FALSE)
-    n_grams[[n_i]][row_i, "p_kn"] = p
-    #row$p_kn=p
+  if (n_i ==1) {
+    #n_grams[[n_i]][, p_kn := p_kn(as.matrix(gram_1), smoothing=FALSE), by=1:nrows_grams] #frequency < freqs_min[n_i],
+    n_grams[[n_i]][frequency >= freqs_min[n_i], p_kn:=lapply(gram_1, function(x) p_kn(as.matrix(x),smoothing=FALSE))]
+    
+  } else if (n_i == 2) {
+    #dt[,other_gear:=mapply(function(x, y) setdiff(x, y), x=gearsL, y=gear)]
+
+    n_grams[[n_i]][frequency >= freqs_min[n_i], 
+                   p_kn:=mapply(function(g1,g2) p_kn(c(as.matrix(g1),as.matrix(g2)),smoothing=FALSE), 
+                               g1=gram_1, g2=gram_2)]
+    
+    #n_grams[[n_i]][frequency < freqs_min[n_i], p_kn := p_kn(c(gram_1,gram_2), smoothing=FALSE)]#, by=frequency < freqs_min[n_i]]# by=1:nrows_grams
+  } else if (n_i == 3) {
+    #n_grams[[n_i]][frequency < freqs_min[n_i], p_kn := p_kn(c(gram_1,gram_2,gram_3), smoothing=FALSE)]#,  by=frequency < freqs_min[n_i]]# by=1:nrows_grams
+    n_grams[[n_i]][frequency >= freqs_min[n_i], 
+                   p_kn:=mapply(function(g1,g2,g3) p_kn(c(as.matrix(g1),as.matrix(g2),as.matrix(g3)),smoothing=FALSE), 
+                                g1=gram_1, g2=gram_2, g3=gram_3)]
+  } else if (n_i ==4) {
+    #n_grams[[n_i]][frequency < freqs_min[n_i], p_kn := p_kn(c(gram_1,gram_2,gram_3,gram_4), smoothing=FALSE)]#),  by=frequency < freqs_min[n_i]]# by=1:nrows_grams
+    n_grams[[n_i]][frequency >= freqs_min[n_i], 
+                   p_kn:=mapply(function(g1,g2,g3,g4) p_kn(c(as.matrix(g1),as.matrix(g2),as.matrix(g3),as.matrix(g4)),smoothing=FALSE), 
+                                g1=gram_1, g2=gram_2, g3=gram_3, g4=gram_3)]
   }
+####  
+  #for (row_i in 1:nrows_grams) {
+  #  if (row_i %% 50000 == 1) {
+  #    print(paste0(Sys.time(),", ",sprintf(row_i / nrows_grams*100, fmt = '%#.4f') ,"% processed with with min freq.", freqs_min[n_i]))
+  #  }
+  #  row = n_grams[[n_i]][row_i,]#
+
+  #  if (row$frequency < freqs_min[n_i]) {
+  #    next
+  #  }
+  #  if (n_i == 1) {
+      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1")])
+  #    gram = as.matrix(row$gram_1)
+   # } else if (n_i == 2) {
+      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2")])
+   #   gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2))
+  #  } else if (n_i == 3) {
+      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3")])
+  #    gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2,row$gram_3))
+   # } else if (n_i ==4) {
+      #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3","gram_4")])
+   #   gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2),as.matrix(row$gram_3),as.matrix(row$gram_4))
+   # }
+   # p = p_kn(gram, smoothing=FALSE)
+   # n_grams[[n_i]][row_i, "p_kn"] = p
+  
+  #}
   saveRDS(n_grams[[n_i]], file =FNAMES_N_GRAMS_PROBS[n_i])
   
 }
 #stopCluster(cl)
 
+n_grams = list()
 for (n_i in 1:4) {
   n_grams=append(n_grams, list(readRDS(FNAMES_N_GRAMS_PROBS[n_i])))
 }
