@@ -15,8 +15,8 @@ library(memoise)
 
 args = commandArgs(trailingOnly=TRUE)
 
-n_gram_from = 1
-n_gram_to = 1
+n_gram_from = 4
+n_gram_to = 4
 
 if (length(args)==2) {
   n_gram_from = args[1]
@@ -119,6 +119,8 @@ count = function(tokens, verbose=FALSE) {
   #print(paste0("count: ",toString(tokens ), " =", result ))
   return (result+1)
 }
+
+mem_count = memoise(count)
 # calculate frequency of tokens following history 
 count_continuation = function(history, verbose=FALSE) {
   len_hist = length(history)
@@ -141,6 +143,7 @@ count_continuation = function(history, verbose=FALSE) {
   return (result+1)
 }
 
+mem_count_continuation = memoise(count_continuation)
 N_c_preceding = function(tokens, verbose=FALSE) {
   len_tokens = length(tokens)
   result = 0
@@ -231,24 +234,27 @@ N_c = function(freq,history , comparison = "equals", verbose=FALSE) {
   return (result+1)
 }
 
-#mem_N_c = memoise(N_c)
-mem_N_c = N_c
+mem_N_c = memoise(N_c)
+#mem_N_c = N_c
+
+
 
 lambda = function(history) {
   l = D1*mem_N_c(1,history) #N_c(1,history)
   l = l + D2*mem_N_c(2,history) # N_c(2,history)
   l = l + D3*mem_N_c(3,history, comparison="greater") # N_c(3,history, comparison="greater")
-  l = l/count_continuation(history)
+  l = l/mem_count_continuation(history)
   return (l)
 }
+mem_lambda = memoise(lambda)
 
 p_kn = function(tokens, smoothing = FALSE) {
   #print(paste0("p_kn(", toString(tokens), ")"))
-  count_tokens = count(tokens)
+  count_tokens = mem_count(tokens)
   tokens_history = tokens[1:length(tokens)-1]
   if (!smoothing) {
     result = count_tokens - D_c(count_tokens)
-    result = result / count_continuation(tokens_history)
+    result = result / mem_count_continuation(tokens_history)
   } else {
     #print("Smoothing!")
     count_prec = N_c_preceding(tokens)
@@ -260,7 +266,7 @@ p_kn = function(tokens, smoothing = FALSE) {
   
   # call recursive if at least one token would be left
   if (length(tokens) > 2) {
-    recursive_result = lambda(tokens_history) 
+    recursive_result = mem_lambda(tokens_history) 
     #print(paste0("lambda: ",recursive_result))
     recursive_result = recursive_result * p_kn(tokens[2:length(tokens)],smoothing=smoothing)
     
@@ -297,18 +303,19 @@ evaluate = function(history_tokens,follow_tokens) {
 
 
 #freqs_min = c(1,3,4,5)
-freqs_min = c(1,10,10,100)
+freqs_min = c(1,10,100,100)
 
 #https://stackoverflow.com/questions/25431307/r-data-table-apply-function-to-rows-using-columns-as-arguments
-
+do_parallel = FALSE
 
 # calculate p_kn for all n_grams for 1 to 4
 for (n_i in n_gram_from:n_gram_to) { #1:4) {
 #foreach(n_i=1:2, .inorder=FALSE, .verbose=TRUE) %dopar% {
-  #nrows_grams = nrow(n_grams[[n_i]])
+  all_nrows_grams = nrow(n_grams[[n_i]])
   nrows_grams = n_grams[[n_i]][frequency >= freqs_min[n_i],.N]
   print(paste0("calculating probs for ",n_i,"_grams with ",nrows_grams," rows."))
   #for (row in 1:nrow(n_grams[[n_i]])) {
+  if (do_parallel) {
 
   if (n_i ==1) {
     #n_grams[[n_i]][, p_kn := p_kn(as.matrix(gram_1), smoothing=FALSE), by=1:nrows_grams] #frequency < freqs_min[n_i],
@@ -333,33 +340,37 @@ for (n_i in n_gram_from:n_gram_to) { #1:4) {
                    p_kn:=mapply(function(g1,g2,g3,g4) p_kn(c(as.matrix(g1),as.matrix(g2),as.matrix(g3),as.matrix(g4)),smoothing=FALSE), 
                                 g1=gram_1, g2=gram_2, g3=gram_3, g4=gram_3)]
   }
-####  
-  #for (row_i in 1:nrows_grams) {
-  #  if (row_i %% 50000 == 1) {
-  #    print(paste0(Sys.time(),", ",sprintf(row_i / nrows_grams*100, fmt = '%#.4f') ,"% processed with with min freq.", freqs_min[n_i]))
-  #  }
-  #  row = n_grams[[n_i]][row_i,]#
+  } else {
+    #not parallel
+    
+  for (row_i in 1:all_nrows_grams) {
+    if (row_i %% 50000 == 1) {
+      print(paste0(Sys.time(),", ",sprintf(row_i / all_nrows_grams*100, fmt = '%#.4f') ,"% processed with with min freq.", freqs_min[n_i]))
+      saveRDS(n_grams[[n_i]], file =FNAMES_N_GRAMS_PROBS[n_i])
+    }
+    row = n_grams[[n_i]][row_i,]#
 
-  #  if (row$frequency < freqs_min[n_i]) {
-  #    next
-  #  }
-  #  if (n_i == 1) {
+    if (row$frequency < freqs_min[n_i]) {
+      next
+    }
+    if (n_i == 1) {
       #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1")])
-  #    gram = as.matrix(row$gram_1)
-   # } else if (n_i == 2) {
+      gram = as.matrix(row$gram_1)
+   } else if (n_i == 2) {
       #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2")])
-   #   gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2))
-  #  } else if (n_i == 3) {
+      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2))
+    } else if (n_i == 3) {
       #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3")])
-  #    gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2,row$gram_3))
-   # } else if (n_i ==4) {
+      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2,row$gram_3))
+    } else if (n_i ==4) {
       #gram = as.matrix(n_grams[[n_i]][row,  c("gram_1","gram_2","gram_3","gram_4")])
-   #   gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2),as.matrix(row$gram_3),as.matrix(row$gram_4))
-   # }
-   # p = p_kn(gram, smoothing=FALSE)
-   # n_grams[[n_i]][row_i, "p_kn"] = p
+      gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2),as.matrix(row$gram_3),as.matrix(row$gram_4))
+    }
+    p = p_kn(gram, smoothing=FALSE)
+    n_grams[[n_i]][row_i, "p_kn"] = p
   
-  #}
+  }
+  }
   saveRDS(n_grams[[n_i]], file =FNAMES_N_GRAMS_PROBS[n_i])
   
 }

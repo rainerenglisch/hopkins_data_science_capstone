@@ -21,6 +21,9 @@ ui <- fluidPage(
     
     # Main panel for displaying outputs ----
     mainPanel(
+      actionButton("nextWord1", "NextWord1"),
+      actionButton("nextWord2", "NextWord2"),
+      actionButton("nextWord3", "NextWord3"),
       textOutput(outputId = "textIndex"),
       textOutput(outputId = "textOutput"),
       textOutput(outputId = "textNextWord1"),
@@ -55,6 +58,7 @@ getNextWords =function(textInput) {
     # if no word found use unigram?
   }
   result=result[order(result$p_kn, decreasing = TRUE),]  
+
   return (result)
   #print(lapply(result[1:3,1:2], as.character))
 }
@@ -73,6 +77,15 @@ server <- function(input, output, session) {
   output$textNextWord2 = renderText({toString(cur_next_words()[2,1])})
   output$textNextWord3 = renderText({toString(cur_next_words()[3,1])})
   
+  updateActionButton(session, inputId = "nextWord1", label = cur_next_words()[1,1])
+  updateActionButton(session, inputId = "nextWord2", label = cur_next_words()[2,1])
+  updateActionButton(session, inputId = "nextWord3", label = cur_next_words()[3,1])
+  
+  observeEvent(input$nextWord1, {
+    updateTextInput(session,inputId = "textInput", value = )
+    session$sendCustomMessage(type = 'testmessage',
+                              message = 'Thank you for clicking')
+  })
 
   output$textIndex = renderText( {
     text_split = str_split(str_trim(input$textInput), pattern=" ", simplify = TRUE)
