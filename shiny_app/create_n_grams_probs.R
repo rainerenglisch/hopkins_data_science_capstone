@@ -39,10 +39,12 @@ for (n_i in 1:4) {
 }
 
 # setting indizes for n_grams
+setindex(n_grams[[1]], feature)
 setindex(n_grams[[1]], gram_1)
 setindex(n_grams[[1]], frequency)
 indices(n_grams[[1]])
 
+setindex(n_grams[[2]], feature)
 setindex(n_grams[[2]], gram_1, gram_2)
 setindex(n_grams[[2]], gram_1)
 setindex(n_grams[[2]], frequency)
@@ -50,6 +52,7 @@ setindex(n_grams[[2]], frequency, gram_1)
 setindex(n_grams[[2]], gram_2)
 indices(n_grams[[2]])
 
+setindex(n_grams[[3]], feature)
 setindex(n_grams[[3]], gram_1, gram_2, gram_3)
 setindex(n_grams[[3]], gram_1, gram_2)
 setindex(n_grams[[3]], gram_2)
@@ -58,6 +61,7 @@ setindex(n_grams[[3]], frequency, gram_1, gram_2)
 setindex(n_grams[[3]], gram_2, gram_3)
 indices(n_grams[[3]])
 
+setindex(n_grams[[4]], feature)
 setindex(n_grams[[4]], gram_1, gram_2, gram_3, gram_4)
 setindex(n_grams[[4]], gram_1, gram_2, gram_3)
 setindex(n_grams[[4]], gram_2, gram_3)
@@ -342,13 +346,14 @@ for (n_i in n_gram_from:n_gram_to) { #1:4) {
   }
   } else {
     #not parallel
-    
-  for (row_i in 1:all_nrows_grams) {
-    if (row_i %% 50000 == 1) {
-      print(paste0(Sys.time(),", ",sprintf(row_i / all_nrows_grams*100, fmt = '%#.4f') ,"% processed with with min freq.", freqs_min[n_i]))
+  n_gram_freq_min=n_grams[[n_i]][frequency >= freqs_min[n_i],]
+  n_gram_freq_min_nrows = n_gram_freq_min[,.N]
+  for (row_i in 1:n_gram_freq_min_nrows) {
+    if (row_i %%  round(n_gram_freq_min_nrows/1000) == 1) {
+      print(paste0(Sys.time(),", ",sprintf(row_i / n_gram_freq_min_nrows*100, fmt = '%#.4f') ,"% processed with with min freq.", freqs_min[n_i]))
       saveRDS(n_grams[[n_i]], file =FNAMES_N_GRAMS_PROBS[n_i])
     }
-    row = n_grams[[n_i]][row_i,]#
+    row = n_gram_freq_min[row_i,]#
 
     if (row$frequency < freqs_min[n_i]) {
       next
@@ -367,7 +372,7 @@ for (n_i in n_gram_from:n_gram_to) { #1:4) {
       gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2),as.matrix(row$gram_3),as.matrix(row$gram_4))
     }
     p = p_kn(gram, smoothing=FALSE)
-    n_grams[[n_i]][row_i, "p_kn"] = p
+    n_grams[[n_i]][feature==row$feature, "p_kn"] = p
   
   }
   }
