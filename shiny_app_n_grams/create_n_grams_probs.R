@@ -307,7 +307,7 @@ evaluate = function(history_tokens,follow_tokens) {
 
 
 #freqs_min = c(1,3,4,5)
-freqs_min = c(1,10,100,100)
+freqs_min = c(10,50,200,100)
 
 #https://stackoverflow.com/questions/25431307/r-data-table-apply-function-to-rows-using-columns-as-arguments
 do_parallel = FALSE
@@ -317,6 +317,7 @@ for (n_i in n_gram_from:n_gram_to) { #1:4) {
 #foreach(n_i=1:2, .inorder=FALSE, .verbose=TRUE) %dopar% {
   all_nrows_grams = nrow(n_grams[[n_i]])
   nrows_grams = n_grams[[n_i]][frequency >= freqs_min[n_i],.N]
+  
   print(paste0("calculating probs for ",n_i,"_grams with ",nrows_grams," rows."))
   #for (row in 1:nrow(n_grams[[n_i]])) {
   if (do_parallel) {
@@ -347,9 +348,11 @@ for (n_i in n_gram_from:n_gram_to) { #1:4) {
   } else {
     #not parallel
   n_gram_freq_min=n_grams[[n_i]][frequency >= freqs_min[n_i],]
+  n_gram_freq_min=n_gram_freq_min[,docfreq:=NULL]
+  print(object.size(n_gram_freq_min),units = "auto", standard = "SI")
   n_gram_freq_min_nrows = n_gram_freq_min[,.N]
   for (row_i in 1:n_gram_freq_min_nrows) {
-    if (row_i %%  round(n_gram_freq_min_nrows/1000) == 1) {
+    if (row_i %%  round(n_gram_freq_min_nrows/100) == 1) {
       print(paste0(Sys.time(),", ",sprintf(row_i / n_gram_freq_min_nrows*100, fmt = '%#.4f') ,"% processed with with min freq.", freqs_min[n_i]))
       saveRDS(n_grams[[n_i]], file =FNAMES_N_GRAMS_PROBS[n_i])
     }
@@ -372,11 +375,15 @@ for (n_i in n_gram_from:n_gram_to) { #1:4) {
       gram = c(as.matrix(row$gram_1),as.matrix(row$gram_2),as.matrix(row$gram_3),as.matrix(row$gram_4))
     }
     p = p_kn(gram, smoothing=FALSE)
-    n_grams[[n_i]][feature==row$feature, "p_kn"] = p
+    #n_grams[[n_i]][feature==row$feature, "p_kn"] = p
+    n_gram_freq_min[feature==row$feature, "p_kn"] = p
   
   }
   }
-  saveRDS(n_grams[[n_i]], file =FNAMES_N_GRAMS_PROBS[n_i])
+  #saveRDS(n_grams[[n_i]], file =FNAMES_N_GRAMS_PROBS[n_i])
+  #
+  
+  saveRDS(n_gram_freq_min, file =FNAMES_N_GRAMS_PROBS[n_i])
   
 }
 #stopCluster(cl)

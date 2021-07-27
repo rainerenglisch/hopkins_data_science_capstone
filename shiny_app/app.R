@@ -42,20 +42,29 @@ getNextWords =function(textInput) {
     print("Using split >=3")
     preceding_gram = as.list(text_split[(length(text_split)-2):length(text_split)])
     print(preceding_gram)
-    result = n_grams[[4]][preceding_gram,c("gram_4","p_kn"), on = c("gram_1","gram_2","gram_3")]
+    #result = n_grams[[4]][preceding_gram,c("gram_4","p_kn"), on = c("gram_1","gram_2","gram_3")]
+    ngram_feature = paste(text_split, collapse = '_')
+    print(ngram_feature)
+    result = n_grams[[4]][ngram_feature,c("gram_4","p_kn"), on = "feature"]
     
   }      
   if (length(text_split)==2  | ( length(text_split)>=3 & length(result)<3 ) ) {#| is.na(result$p_kn)) {
     print("Using split ==2")
-    result = n_grams[[3]][as.list(text_split[(length(text_split)-1):length(text_split)]),c("gram_3","p_kn"), on = c("gram_1","gram_2")]
+    #result = n_grams[[3]][as.list(text_split[(length(text_split)-1):length(text_split)]),c("gram_3","p_kn"), on = c("gram_1","gram_2")]
+    ngram_feature = paste(text_split[(length(text_split)-1):length(text_split)], collapse = '_')
+    print(ngram_feature)
+    result = n_grams[[3]][ngram_feature,c("gram_3","p_kn"),on = "feature"]
   }
   if (length(text_split)==1 | (length(text_split)>=2 & length(result)<3 )) {#| is.na(result$p_kn)) {
     print("Using split ==1")
     if (text_split[1] != "") {
       result = n_grams[[2]][as.list(text_split[length(text_split)]),c("gram_2","p_kn"), on = c("gram_1")]
+      #ngram_feature = paste(text_split[length(text_split)], collapse = '_')
+      #print(ngram_feature)
+      #result = n_grams[[2]][ngram_feature,c("gram_2","p_kn"), on = "feature"]
     } else {
       print("Empty string using 1-gram")
-      result = n_grams[[1]][,c("gram_1","p_kn")]
+      result = n_grams[[1]][grep("[A-Za-z0-9]",gram_1),c("gram_1","p_kn")]
     }
     # for no word entered, need BOS 2-gram
     # if no word found use unigram?
