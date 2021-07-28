@@ -7,7 +7,7 @@ library(data.table)
 ui <- fluidPage(
   
   # App title ----
-  titlePanel("Next word prediction with kneyser nei probabilities"),
+  titlePanel("Next word prediction with Kneser–Ney smoothing"),
   
   # Sidebar layout with input and output definitions ----
   sidebarLayout(

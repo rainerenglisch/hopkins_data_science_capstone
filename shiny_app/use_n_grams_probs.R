@@ -1,6 +1,6 @@
 library(data.table)
 
-if (is.na(BASE_DIR2)) {
+if (!exists("BASE_DIR2")) {
   BASE_DIR2="./"
 }
 
@@ -81,7 +81,7 @@ indices(n_grams[[4]])
 getNextWords =function(textInput) {
   print("getNextWords")
   print(textInput)
-  textInput=str_replace_all(textInput, "[[:punct:]]", "") 
+  textInput=str_replace_all(tolower(textInput), "[[:punct:]]", "") 
   text_split = str_split(str_trim(textInput), pattern="\\s+", simplify = TRUE)
   #print(paste0("length of text_split ", toString(length(text_split))))
   #print(text_split )

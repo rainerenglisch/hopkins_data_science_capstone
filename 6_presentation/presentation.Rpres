@@ -15,27 +15,49 @@ Agenda
 Task
 ========================================================
 - App for prediction of next word given an input text
-- Deployment of app to shinyapp.io 
+- Deployment of app to shinyapp.io cloud service
   - given memory constraint (1GB)
+- Input 3 sources of text
+  - blogs, tweets and news
 
+1/2 How can you briefly explain how your predictive model works?
+========================================================
+1. Processing all three text sources in chunks
+  - tokenizing with removal of punctuation, symbol, numbers and urls
+  - keeping tokens with [A-Za-z0-9] (removing asian text e.g.)
+  - creating n-grams from tokens (n=1..4)
+  - to match memory limit of shinyapp.io:
+    - reducing size of n-grams using frequency thresholds 
+  - calculate probability of each n-gram using Kneser-Ney smoothing
+  
+2/2 How can you briefly explain how your predictive model works?
+========================================================
+2. Prediction of next word
+  - created a function that takes a string and looks up in n-grams from 4 to 1
+    - if match found the last top 3 grams in terms of probability are returned
+
+    
 Performance of model?
 ========================================================
-- https://github.com/hfoffani/dsci-benchmark
-- Overall top-3 score:     11.61 %
-- Overall top-1 precision: 8.51 %
-- Overall top-3 precision: 14.28 %
-- Average runtime:         15.33 msec
-- Number of predictions:   28464
-- Total memory used:       290.62 MB
+- (Small) Model size: 21 MB
+- Performance of prediction model is checked via github module provided here:
+  - https://github.com/hfoffani/dsci-benchmark
+- Result:
+  - Overall top-3 score:     13.66 %
+  - Overall top-1 precision: 9.95 %
+  - Overall top-3 precision: 16.86 %
+  - Number of predictions:   28464
+  - Total memory used:       290.62 MB
 
-Demo of product
+
+Live application
 ========================================================
+- The live application is available here
+  - https://rengland.shinyapps.io/shiny_app/
+- Just enter words in the input text field
+  - when word predictions were found the top 3 results are shown on buttons
+  - just press a button to add the word to the input text
 
-For more details on authoring R presentations please visit <https://support.rstudio.com/hc/en-us/articles/200486468>.
-
-- Bullet 1
-- Bullet 2
-- Bullet 3
 
 Slide With Code
 ========================================================
