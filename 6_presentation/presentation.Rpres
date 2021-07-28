@@ -20,6 +20,13 @@ Task
 
 Performance of model?
 ========================================================
+- https://github.com/hfoffani/dsci-benchmark
+- Overall top-3 score:     11.61 %
+- Overall top-1 precision: 8.51 %
+- Overall top-3 precision: 14.28 %
+- Average runtime:         15.33 msec
+- Number of predictions:   28464
+- Total memory used:       290.62 MB
 
 Demo of product
 ========================================================
